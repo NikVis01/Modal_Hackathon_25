@@ -2,15 +2,12 @@ import modal
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 
-# Create a Modal app
-app = modal.App("hello-world-app")
+app = modal.App("hello-modal-app")
 
-# Create a Modal image with our dependencies
 image = modal.Image.debian_slim().pip_install(
     "fastapi==0.109.2",
 )
 
-# Create the FastAPI app
 web_app = FastAPI()
 
 @web_app.get("/", response_class=HTMLResponse)
@@ -41,7 +38,7 @@ async def root():
     </html>
     """
 
-# Mount the FastAPI app using Modal's ASGI integration
+# ASGI STUFF
 @app.function(image=image)
 @modal.asgi_app()
 def fastapi_app():
