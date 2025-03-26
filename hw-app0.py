@@ -18,7 +18,7 @@ async def root():
     return """
     <html>
         <head>
-            <title>Hello World</title>
+            <title>Modal Hackathon</title>
             <style>
                 body {
                     font-family: Arial, sans-serif;
@@ -36,7 +36,7 @@ async def root():
             </style>
         </head>
         <body>
-            <h1>Hello World!</h1>
+            <h1>Hi Modal Hackathon!</h1>
         </body>
     </html>
     """
