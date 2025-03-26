@@ -1,3 +1,6 @@
 fastapi==0.109.2
 uvicorn==0.27.1
 modal==0.55.4086 
+flask==3.1.0
+python==3.12.7
+Werkzeug==3.1.3
