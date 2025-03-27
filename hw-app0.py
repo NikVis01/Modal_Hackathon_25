@@ -10,7 +10,7 @@ image = modal.Image.debian_slim().pip_install(
 
 web_app = FastAPI()
 
-@web_app.get("/", response_class=HTMLResponse)
+@web_app.get("/", response_class=HTMLResponse) # HTML WRITTEN ENTIRELY BY CURSOR
 async def root():
     return """
     <html>
