@@ -51,28 +51,34 @@ Current conversation context and missing information will be provided."""
 
 @app.function(secrets=[modal.Secret.from_name("openai-secret")])
 def get_llm_response(conversation_history, missing_info):
-    from openai import OpenAI
-    
-    client = OpenAI()
-    
-    # Create messages array with system prompt
+    import requests
+
+    # Define API endpoint (modify based on your Hugging Face model)
+    HF_API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+
+    # Load Hugging Face API Key from secrets
+    HF_API_KEY = ".."
+    headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+
+    # Prepare messages for Mistral
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    
-    # Add conversation history
     messages.extend(conversation_history)
-    
-    # Add context about missing information
+
+    # Add missing information context
     missing_fields = [k for k, v in missing_info.items() if not v]
     context = f"\nMissing information: {', '.join(missing_fields)}"
     messages.append({"role": "system", "content": context})
+
+    # Prepare request payload
+    payload = {"inputs": messages}
+
+    # Make request to Hugging Face Inference API
+    response = requests.post(HF_API_URL, headers=headers, json=payload)
     
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-        temperature=0.7,
-    )
-    
-    return response.choices[0].message.content
+    if response.status_code == 200:
+        return response.json()["generated_text"]
+    else:
+        return "Sorry, there was an issue with the AI service."
 
 @app.function(image=image, volumes={"/data": volume})
 @modal.fastapi_endpoint()
