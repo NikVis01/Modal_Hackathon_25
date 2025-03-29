@@ -2,93 +2,156 @@ import modal
 import json
 import os
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
 
+# Create volumes and set up images
 volume = modal.Volume.from_name(name="interview-storage", create_if_missing=True)
-
-image = modal.Image.debian_slim().pip_install("fastapi[standard]")
+image = (modal.Image.debian_slim()
+         .pip_install("fastapi[standard]")
+         .pip_install("openai"))
 
 app = modal.App("interview-app")
+stub = FastAPI()
 
-QUESTIONS = [
-    "What can I help you ship?",
-    "Anything else you'd like to add?"
-]
+# Add CORS middleware
+stub.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # For development only - restrict this in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+INITIAL_QUESTION = "What can I help you ship?"
+
+# Required information we want to collect
+REQUIRED_INFO = {
+    "name": False,
+    "email": False,
+    "project_description": False,
+    "timeline": False
+}
+
+SYSTEM_PROMPT = """You are an AI interviewer helping to gather information about a potential project. 
+Your goal is to collect the following information naturally through conversation:
+- Name
+- Email address
+- Project description
+- Timeline/deadline
+
+Guidelines:
+- Keep responses concise and friendly
+- Ask for only one piece of missing information at a time
+- If you detect any required information in their response, note it
+- If information is unclear or incomplete, ask for clarification
+- Once all information is collected, provide a summary
+
+Current conversation context and missing information will be provided."""
+
+@app.function(secrets=[modal.Secret.from_name("openai-secret")])
+def get_llm_response(conversation_history, missing_info):
+    from openai import OpenAI
+    
+    client = OpenAI()
+    
+    # Create messages array with system prompt
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    # Add conversation history
+    messages.extend(conversation_history)
+    
+    # Add context about missing information
+    missing_fields = [k for k, v in missing_info.items() if not v]
+    context = f"\nMissing information: {', '.join(missing_fields)}"
+    messages.append({"role": "system", "content": context})
+    
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=messages,
+        temperature=0.7,
+    )
+    
+    return response.choices[0].message.content
 
 @app.function(image=image, volumes={"/data": volume})
-@modal.web_endpoint()
-async def list_files():
-    """Endpoint to check what files are in the volume"""
-    if not os.path.exists("/data"):
-        os.makedirs("/data")
-        return {"message": "Created /data directory", "files": []}
-    
-    files = os.listdir("/data")
-    contents = {}
-    for file in files:
-        if file.endswith('.json'):
-            with open(f"/data/{file}", 'r') as f:
-                contents[file] = json.load(f)
-    
-    return {
-        "files": files,
-        "contents": contents
-    }
-
-@app.function(image=image, volumes={"/data": volume})
-@modal.web_endpoint()
+@modal.fastapi_endpoint()
 async def interview(action: str = "start", question_index: int = None, user_response: str = None):
-    """
-    Single endpoint handling all interview actions:
-    - /interview?action=start -> Starts interview
-    - /interview?action=chat&question_index=0&user_response=John -> Handles responses
-    """
+    # Add CORS headers to the response
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+    }
+    
     if not os.path.exists("/data"):
         os.makedirs("/data")
-        print("Created /data directory")
+
+    # Initialize or load conversation state
+    conversation_file = "/data/current_conversation.json"
+    if os.path.exists(conversation_file):
+        with open(conversation_file, 'r') as f:
+            state = json.load(f)
+    else:
+        state = {
+            "conversation_history": [],
+            "required_info": REQUIRED_INFO.copy(),
+            "complete": False
+        }
 
     if action == "start":
-        return {
-            "question": QUESTIONS[0],
-            "question_index": 0
+        # Start new conversation
+        state = {
+            "conversation_history": [
+                {"role": "assistant", "content": INITIAL_QUESTION}
+            ],
+            "required_info": REQUIRED_INFO.copy(),
+            "complete": False
         }
+        
+        with open(conversation_file, 'w') as f:
+            json.dump(state, f)
+        
+        return {"question": INITIAL_QUESTION, "question_index": 0}, headers
     
-    elif action == "chat" and question_index is not None and user_response is not None:
-        responses = {}
+    elif action == "chat" and user_response:
+        # Add user response to history
+        state["conversation_history"].append({"role": "user", "content": user_response})
         
-        responses[QUESTIONS[question_index]] = user_response
+        # Get LLM response
+        llm_response = get_llm_response.remote(
+            state["conversation_history"],
+            state["required_info"]
+        )
         
-        next_index = question_index + 1
-        if next_index < len(QUESTIONS):
+        # Add LLM response to history
+        state["conversation_history"].append({"role": "assistant", "content": llm_response})
+        
+        # Save current state
+        with open(conversation_file, 'w') as f:
+            json.dump(state, f)
+        
+        # If all information is collected, save final response
+        if all(state["required_info"].values()):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            final_file = f"/data/interview_{timestamp}.json"
+            with open(final_file, 'w') as f:
+                json.dump(state, f)
+            state["complete"] = True
+            
             return {
-                "question": QUESTIONS[next_index],
-                "question_index": next_index
-            }
-        else:
-            try:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"/data/interview_{timestamp}.json"
-                with open(filename, "w") as f:
-                    json.dump(responses, f)
-                print(f"Saved responses to {filename}")
-                
-                if os.path.exists(filename):
-                    print(f"Verified file exists: {filename}")
-                else:
-                    print(f"Warning: File not found after saving: {filename}")
-                
-                return {
-                    "message": "Interview complete!",
-                    "responses": responses,
-                    "saved_to": filename
-                }
-            except Exception as e:
-                print(f"Error saving responses: {str(e)}")
-                return {
-                    "error": f"Failed to save responses: {str(e)}",
-                    "responses": responses
-                }
+                "message": "Interview complete!",
+                "question": llm_response,
+                "complete": True
+            }, headers
+        
+        return {
+            "question": llm_response,
+            "question_index": len(state["conversation_history"]) // 2,
+            "complete": False
+        }, headers
     
-    return {"error": "Invalid action or missing parameters"}
+    return {"error": "Invalid action or missing parameters"}, headers
 
 if __name__ == "__main__":
     modal.serve(app) 

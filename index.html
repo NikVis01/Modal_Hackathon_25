@@ -1,69 +1,114 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Simple Interview Bot</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Interview Chat</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 600px;
+            max-width: 800px;
             margin: 20px auto;
-            padding: 20px;
+            padding: 0 20px;
         }
-        #chat-box {
+        #chat-container {
             border: 1px solid #ccc;
+            border-radius: 5px;
             padding: 20px;
-            min-height: 300px;
             margin-bottom: 20px;
+            height: 400px;
             overflow-y: auto;
         }
-        .bot-message {
-            color: blue;
+        .message {
             margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
         }
-        .user-message {
-            color: green;
-            margin: 10px 0;
+        .assistant {
+            background-color: #f0f0f0;
+            margin-right: 20%;
+        }
+        .user {
+            background-color: #e3f2fd;
+            margin-left: 20%;
             text-align: right;
         }
-        input {
-            width: 80%;
-            padding: 5px;
+        #input-container {
+            display: flex;
+            gap: 10px;
+        }
+        #user-input {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
         }
         button {
-            width: 18%;
-            padding: 5px;
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
-    <div id="chat-box"></div>
-    <div>
-        <input type="text" id="user-input" placeholder="Type your answer...">
-        <button onclick="sendMessage()">Send</button>
+    <h1>Project Interview Chat</h1>
+    <div id="chat-container"></div>
+    <div id="input-container">
+        <input type="text" id="user-input" placeholder="Type your message here..." />
+        <button onclick="sendMessage()" id="send-button">Send</button>
     </div>
 
     <script>
-        let currentQuestionIndex = -1;
-        const chatBox = document.getElementById('chat-box');
-        const userInput = document.getElementById('user-input');
-        
-        // Replace with your Modal URL
-        const INTERVIEW_URL = 'https://nikvis01--interview-app-interview.modal.run';
+        const BASE_URL = 'https://nikvis01--interview-app-interview.modal.run';
+        let questionIndex = 0;
 
-        // Start chat when page loads
-        window.onload = async function() {
+        // Initialize chat
+        document.addEventListener('DOMContentLoaded', async () => {
             try {
-                const response = await fetch(`${INTERVIEW_URL}?action=start`);
+                console.log('Fetching initial question...');
+                const response = await fetch(`${BASE_URL}/interview?action=start`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
+                });
+                
+                console.log('Response received:', response);
                 const data = await response.json();
-                addMessage(data.question, 'bot');
-                currentQuestionIndex = data.question_index;
+                console.log('Data:', data);
+                
+                if (data.question) {
+                    addMessage(data.question, 'assistant');
+                    questionIndex = data.question_index;
+                }
             } catch (error) {
-                addMessage('Error starting chat: ' + error.message, 'bot');
-                console.error(error);
+                console.error('Error:', error);
+                addMessage('Error starting chat. Please refresh the page.', 'assistant');
             }
-        };
+        });
+
+        function addMessage(message, sender) {
+            const chatContainer = document.getElementById('chat-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.textContent = message;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
 
         async function sendMessage() {
+            const userInput = document.getElementById('user-input');
             const message = userInput.value.trim();
             if (!message) return;
 
@@ -71,35 +116,35 @@
             userInput.value = '';
 
             try {
-                const url = `${INTERVIEW_URL}?action=chat&question_index=${currentQuestionIndex}&user_response=${encodeURIComponent(message)}`;
-                const response = await fetch(url);
-                
+                const response = await fetch(
+                    `${BASE_URL}/interview?action=chat&question_index=${questionIndex}&user_response=${encodeURIComponent(message)}`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        },
+                        mode: 'cors'
+                    }
+                );
                 const data = await response.json();
                 
-                if (data.message === "Interview complete!") {
-                    addMessage("Thank you! Interview complete!", 'bot');
-                    addMessage("Your responses have been saved.", 'bot');
-                    userInput.disabled = true;
-                } else {
-                    addMessage(data.question, 'bot');
-                    currentQuestionIndex = data.question_index;
+                if (data.error) {
+                    addMessage(`Error: ${data.error}`, 'assistant');
+                    return;
                 }
+
+                addMessage(data.question, 'assistant');
+                questionIndex = data.question_index;
             } catch (error) {
-                addMessage('Error sending message: ' + error.message, 'bot');
-                console.error(error);
+                console.error('Error:', error);
+                addMessage('Error processing your message.', 'assistant');
             }
         }
 
-        function addMessage(message, sender) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = sender === 'bot' ? 'bot-message' : 'user-message';
-            messageDiv.textContent = message;
-            chatBox.appendChild(messageDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        userInput.addEventListener('keypress', function(e) {
+        // Allow sending with Enter key
+        document.getElementById('user-input').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
+                e.preventDefault();
                 sendMessage();
             }
         });
