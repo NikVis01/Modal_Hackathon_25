@@ -47,15 +47,13 @@
         const chatBox = document.getElementById('chat-box');
         const userInput = document.getElementById('user-input');
         
-        // Replace with your Modal URLs
-        const BASE_URL = 'https://nikvis01--interview-app';
-        const START_URL = `${BASE_URL}-start.modal.run`;
-        const CHAT_URL = `${BASE_URL}-chat.modal.run`;
+        // Replace with your Modal URL
+        const INTERVIEW_URL = 'https://nikvis01--interview-app-interview.modal.run';
 
         // Start chat when page loads
         window.onload = async function() {
             try {
-                const response = await fetch(START_URL);
+                const response = await fetch(`${INTERVIEW_URL}?action=start`);
                 const data = await response.json();
                 addMessage(data.question, 'bot');
                 currentQuestionIndex = data.question_index;
@@ -73,16 +71,8 @@
             userInput.value = '';
 
             try {
-                const response = await fetch(CHAT_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        question_index: currentQuestionIndex,
-                        user_response: message
-                    })
-                });
+                const url = `${INTERVIEW_URL}?action=chat&question_index=${currentQuestionIndex}&user_response=${encodeURIComponent(message)}`;
+                const response = await fetch(url);
                 
                 const data = await response.json();
                 

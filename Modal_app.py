@@ -7,7 +7,6 @@ from transformers import pipeline
 
 volume = modal.Volume.from_name(name="interview-storage", create_if_missing=True)
 
-# Setup image
 image = modal.Image.debian_slim().pip_install(
     "fastapi[standard]",
     "transformers==4.40.0",
@@ -17,15 +16,9 @@ image = modal.Image.debian_slim().pip_install(
 
 app = modal.App("interview-app")
 
-class ChatRequest(BaseModel):
-    question_index: int
-    user_response: str
-
 QUESTIONS = [
-    "Hi! What's your name?",
-    "What is your email address?",
-    "What is your company name and what are you planning to ship?",
-    "Specify a timeframe for your project"
+    "What can I help you ship?",
+    "Anything else you'd like to add?"
 ]
 
 @app.function(image=image)
@@ -34,46 +27,47 @@ def init_sentiment():
 
 @app.function(image=image)
 @modal.web_endpoint()
-async def root():
-    return {"message": "Interview Bot API is running"}
-
-@app.function(image=image)
-@modal.web_endpoint()
-async def start():
-    return {
-        "question": QUESTIONS[0],
-        "question_index": 0
-    }
-
-@app.function(image=image, volumes={"/data": volume})
-@modal.web_endpoint(method="POST")  # Explicitly set POST method
-async def chat(request: ChatRequest):  # Accept JSON body
-    responses = {}
-    sentiment_analyzer = init_sentiment()
-    
-    sentiment = sentiment_analyzer(request.user_response)[0]
-    
-    responses[QUESTIONS[request.question_index]] = {
-        "response": request.user_response,
-        "sentiment": sentiment
-    }
-    
-    next_index = request.question_index + 1
-    if next_index < len(QUESTIONS):
+async def interview(action: str = "start", question_index: int = None, user_response: str = None):
+    """
+    Single endpoint handling all interview actions:
+    - /interview?action=start -> Starts interview
+    - /interview?action=chat&question_index=0&user_response=John -> Handles responses
+    """
+    if action == "start":
         return {
-            "question": QUESTIONS[next_index],
-            "question_index": next_index
+            "question": QUESTIONS[0],
+            "question_index": 0
         }
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"/data/interview_{timestamp}.json"
-        with open(filename, "w") as f:
-            json.dump(responses, f)
+    
+    elif action == "chat" and question_index is not None and user_response is not None:
+        responses = {}
+        sentiment_analyzer = init_sentiment()
         
-        return {
-            "message": "Interview complete!",
-            "responses": responses
+        sentiment = sentiment_analyzer(user_response)[0]
+        
+        responses[QUESTIONS[question_index]] = {
+            "response": user_response,
+            "sentiment": sentiment
         }
+        
+        next_index = question_index + 1
+        if next_index < len(QUESTIONS):
+            return {
+                "question": QUESTIONS[next_index],
+                "question_index": next_index
+            }
+        else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"/data/interview_{timestamp}.json"
+            with open(filename, "w") as f:
+                json.dump(responses, f)
+            
+            return {
+                "message": "Interview complete!",
+                "responses": responses
+            }
+    
+    return {"error": "Invalid action or missing parameters"}
 
 if __name__ == "__main__":
     modal.serve(app) 
