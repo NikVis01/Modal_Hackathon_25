@@ -7,7 +7,7 @@ from datetime import datetime
 image = modal.Image.debian_slim().pip_install("fastapi")
 
 # Create volume for storing responses
-volume = modal.Volume.from_name("Responses", create_if_missing=True)
+volume = modal.Volume.from_name("my-volume", create_if_missing=True)
 
 app = modal.App("interview-app")
 
@@ -16,37 +16,52 @@ QUESTIONS = [
     "Anything else you'd like to add?"
 ]
 
-@app.function(image=image, volumes=volume)
+@app.function(image=image, volumes={"/data": volume})
 @modal.web_endpoint()
 def interview(action: str = "start", question_index: int = None, user_response: str = None):
     # Ensure data directory exists in volume
     data_dir = "/data"
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
-
+    
+    response_file = "/data/responses.json"
+    
     if action == "start":
+        # Initialize/reset the responses file when starting new interview
+        initial_data = {
+            "timestamp_started": datetime.now().strftime("%Y%m%d_%H%M%S"),
+            "responses": []
+        }
+        with open(response_file, 'w') as f:
+            json.dump(initial_data, f, indent=2)
+            
         return {
             "question": QUESTIONS[0],
             "question_index": 0
         }
     
     elif action == "chat" and question_index is not None:
-        # Create a filename with timestamp
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        response_file = f"/data/response_{timestamp}.json"
+        # Load existing responses
+        try:
+            with open(response_file, 'r') as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            data = {
+                "timestamp_started": datetime.now().strftime("%Y%m%d_%H%M%S"),
+                "responses": []
+            }
         
-        # Save the response
-        response_data = {
-            "timestamp": timestamp,
+        # Add new response
+        data["responses"].append({
             "question": QUESTIONS[question_index],
-            "response": user_response
-        }
+            "response": user_response,
+            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S")
+        })
         
-        # Write to JSON file in volume
+        # Save updated responses
         with open(response_file, 'w') as f:
-            json.dump(response_data, f, indent=2)
+            json.dump(data, f, indent=2)
 
-        # Continue with next question or complete
         next_index = question_index + 1
         if next_index < len(QUESTIONS):
             return {
@@ -61,26 +76,28 @@ def interview(action: str = "start", question_index: int = None, user_response: 
     
     return {"error": "Invalid parameters"}
 
-# Add endpoint to check saved responses
-@app.function(image=image, volume=volume)
+@app.function(image=image, volumes={"/data": volume})
 @modal.web_endpoint()
 def check_responses():
-    data_dir = "/data"
-    if not os.path.exists(data_dir):
-        return {"status": "No responses yet"}
+    response_file = "/data/responses.json"
     
-    files = os.listdir(data_dir)
-    responses = []
-    
-    for file in files:
-        if file.endswith('.json'):
-            with open(os.path.join(data_dir, file), 'r') as f:
-                responses.append(json.load(f))
-    
-    return {
-        "status": "success",
-        "responses": responses
-    }
+    try:
+        with open(response_file, 'r') as f:
+            data = json.load(f)
+            return {
+                "status": "success",
+                "data": data
+            }
+    except FileNotFoundError:
+        return {
+            "status": "No responses yet",
+            "data": None
+        }
+    except json.JSONDecodeError:
+        return {
+            "status": "Error reading responses",
+            "data": None
+        }
 
 if __name__ == "__main__":
     modal.serve(app) 
