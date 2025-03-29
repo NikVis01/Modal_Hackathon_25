@@ -5,7 +5,7 @@ import json
 from transformers import pipeline
 
 image = modal.Image.debian_slim().pip_install(
-    "fastapi",
+    "fastapi[standard]",
     "transformers==4.40.0",
     "torch==2.2.1",
     "sentencepiece"
@@ -17,6 +17,10 @@ class InterviewResponse(BaseModel):
     question: str
     answer: str
 
+class ChatRequest(BaseModel):
+    question_index: int
+    user_response: str = None
+
 QUESTIONS = [
     "Hi! What's your name?",
     "What is your email address?",
@@ -24,20 +28,23 @@ QUESTIONS = [
     "Specify a timeframe for your project"
 ]
 
-app = modal.App("interview-bot")
+app = modal.App("modal_app0")
 
-@app.function()
-@modal.web_endpoint(method="POST")
-async def chat(question_index: int, user_response: str = None):
+@web_app.get("/")
+async def root():
+    return {"message": "Hi! Welcome!"}
+
+@web_app.post("/chat")
+async def chat(request: ChatRequest):
     responses = {}
-
-    if question_index == 0 and user_response is None:
+    
+    if request.question_index == 0 and request.user_response is None:
         return {"question": QUESTIONS[0], "question_index": 0}
     
-    if user_response:
-        responses[QUESTIONS[question_index]] = user_response
+    if request.user_response:
+        responses[QUESTIONS[request.question_index]] = request.user_response
     
-    next_index = question_index + 1
+    next_index = request.question_index + 1
     if next_index < len(QUESTIONS):
         return {
             "question": QUESTIONS[next_index],
@@ -49,4 +56,6 @@ async def chat(question_index: int, user_response: str = None):
             "responses": responses
         }
 
-
+@modal.asgi_app()
+def fastapi_app():
+    return web_app 
