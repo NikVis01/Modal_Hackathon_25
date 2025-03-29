@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Project Interview</title>
+    <title>Project Interview with AI</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -68,7 +68,7 @@
     </style>
 </head>
 <body>
-    <h1>Project Interview</h1>
+    <h1>Project Interview with AI</h1>
     <div id="chat-container"></div>
     <div id="input-container">
         <input type="text" id="user-input" placeholder="Type your message here...">
@@ -78,22 +78,33 @@
     <div id="responses-container"></div>
 
     <script>
-        const BASE_URL = 'https://nikvis01--interview-app-interview.modal.run';
+        const BASE_URL = 'https://nikvis01--interview-app-fastapi-app.modal.run';
+        const INTERVIEW_URL = `${BASE_URL}`;
+        const CHECK_RESPONSES_URL = `${BASE_URL}/check_responses`;
         let questionIndex = 0;
 
-        // Start chat when page loads
-        window.onload = function() {
-            fetch(`${BASE_URL}?action=start`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.question) {
-                        addMessage(data.question, 'assistant');
+        window.onload = async function() {
+            try {
+                const response = await fetch(`${INTERVIEW_URL}?action=start`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
                     }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    addMessage('Failed to start chat. Please refresh the page.', 'assistant');
                 });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                if (data.question) {
+                    addMessage(data.question, 'assistant');
+                }
+            } catch (error) {
+                console.error('Error starting chat:', error);
+                addMessage('Failed to start chat. Please refresh the page.', 'assistant');
+            }
         };
 
         function addMessage(message, sender) {
@@ -115,15 +126,29 @@
 
             try {
                 const response = await fetch(
-                    `${BASE_URL}?action=chat&question_index=${questionIndex}&user_response=${encodeURIComponent(message)}`
+                    `${INTERVIEW_URL}?action=chat&question_index=${questionIndex}&user_response=${encodeURIComponent(message)}`,
+                    {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    }
                 );
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
                 const data = await response.json();
 
+                if (data.error) {
+                    addMessage(data.error, 'assistant');
+                    return;
+                }
+
                 if (data.complete) {
-                    addMessage(data.message, 'assistant');
+                    addMessage(data.summary || 'Interview complete! Your responses have been saved.', 'assistant');
                     input.disabled = true;
                     document.querySelector('#input-container button').disabled = true;
-                } else {
+                } else if (data.question) {
                     addMessage(data.question, 'assistant');
                     questionIndex = data.question_index;
                 }
@@ -136,17 +161,33 @@
         async function viewResponses() {
             const responsesContainer = document.getElementById('responses-container');
             try {
-                const response = await fetch('https://nikvis01--interview-app-check-responses.modal.run');
-                const data = await response.json();
+                const response = await fetch(CHECK_RESPONSES_URL, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    },
+                    mode: 'cors'
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const result = await response.json();
                 
-                if (data.status === "success") {
-                    let html = '<h2>Saved Responses</h2>';
-                    data.responses.forEach(response => {
+                if (result.status === "success" && result.data) {
+                    let html = `
+                        <h2>Interview Responses</h2>
+                        <p><strong>Started:</strong> ${result.data.timestamp_started}</p>
+                    `;
+                    
+                    result.data.responses.forEach(response => {
+                        const questionType = response.question === "AI Follow-up" ? 
+                            "<span style='color: #007bff'>[AI Follow-up]</span> " : "";
                         html += `
                             <div style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px;">
-                                <p><strong>Time:</strong> ${response.timestamp}</p>
-                                <p><strong>Question:</strong> ${response.question}</p>
+                                <p><strong>Question:</strong> ${questionType}${response.question}</p>
                                 <p><strong>Response:</strong> ${response.response}</p>
+                                <p><small>Time: ${formatTimestamp(response.timestamp)}</small></p>
                             </div>
                         `;
                     });
@@ -162,7 +203,16 @@
             }
         }
 
-        // Send on Enter key
+        function formatTimestamp(timestamp) {
+            const year = timestamp.slice(0, 4);
+            const month = timestamp.slice(4, 6);
+            const day = timestamp.slice(6, 8);
+            const hour = timestamp.slice(9, 11);
+            const minute = timestamp.slice(11, 13);
+            const second = timestamp.slice(13, 15);
+            return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+        }
+
         document.getElementById('user-input').addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 sendMessage();
