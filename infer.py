@@ -1,7 +1,8 @@
 import requests
 
 API_URL = "https://router.huggingface.co/hf-inference/models/deepset/roberta-base-squad2"
-headers = {"Authorization": "Bearer hf_XXXXX"}
+headers = {"Authorization": "Bearer <auth_token>"}
+# Replace <auth_token> with your actual Hugging Face API token
 
 def query(payload):
     response = requests.post(API_URL, headers=headers, json=payload)
