@@ -1,14 +1,13 @@
 import modal
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  ## NOT IN USE BUT NEEDED LATER
 from pydantic import BaseModel
 import json
 from datetime import datetime
 from transformers import pipeline
 
-# Create a new volume that will persist between runs
 volume = modal.Volume.from_name(name="interview-storage", create_if_missing=True)
 
+# Setup image
 image = modal.Image.debian_slim().pip_install(
     "fastapi[standard]",
     "transformers==4.40.0",
@@ -16,9 +15,9 @@ image = modal.Image.debian_slim().pip_install(
     "sentencepiece"
 )
 
-web_app = FastAPI()
+app = modal.App("interview-app")
 
-class ChatResponse(BaseModel):
+class ChatRequest(BaseModel):
     question_index: int
     user_response: str
 
@@ -29,33 +28,37 @@ QUESTIONS = [
     "Specify a timeframe for your project"
 ]
 
-app = modal.App("user-interview")
-
-@app.function(image=image) ### SENTIMENT LAYER BULLSHIT
+@app.function(image=image)
 def init_sentiment():
     return pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
 
-@web_app.post("/start")
-async def start_chat():
+@app.function(image=image)
+@modal.web_endpoint()
+async def root():
+    return {"message": "Interview Bot API is running"}
+
+@app.function(image=image)
+@modal.web_endpoint()
+async def start():
     return {
         "question": QUESTIONS[0],
         "question_index": 0
     }
 
 @app.function(image=image, volumes={"/data": volume})
-@web_app.post("/chat")
-async def chat(response: ChatResponse):
+@modal.web_endpoint(method="POST")  # Explicitly set POST method
+async def chat(request: ChatRequest):  # Accept JSON body
     responses = {}
     sentiment_analyzer = init_sentiment()
     
-    sentiment = sentiment_analyzer(response.user_response)[0]
+    sentiment = sentiment_analyzer(request.user_response)[0]
     
-    responses[QUESTIONS[response.question_index]] = {
-        "response": response.user_response,
+    responses[QUESTIONS[request.question_index]] = {
+        "response": request.user_response,
         "sentiment": sentiment
     }
     
-    next_index = response.question_index + 1
+    next_index = request.question_index + 1
     if next_index < len(QUESTIONS):
         return {
             "question": QUESTIONS[next_index],
@@ -72,6 +75,5 @@ async def chat(response: ChatResponse):
             "responses": responses
         }
 
-@modal.asgi_app()
-def fastapi_app():
-    return web_app 
+if __name__ == "__main__":
+    modal.serve(app) 

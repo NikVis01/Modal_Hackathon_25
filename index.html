@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simple Interview Bot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+        #chat-box {
+            border: 1px solid #ccc;
+            padding: 20px;
+            min-height: 300px;
+            margin-bottom: 20px;
+            overflow-y: auto;
+        }
+        .bot-message {
+            color: blue;
+            margin: 10px 0;
+        }
+        .user-message {
+            color: green;
+            margin: 10px 0;
+            text-align: right;
+        }
+        input {
+            width: 80%;
+            padding: 5px;
+        }
+        button {
+            width: 18%;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-box"></div>
+    <div>
+        <input type="text" id="user-input" placeholder="Type your answer...">
+        <button onclick="sendMessage()">Send</button>
+    </div>
+
+    <script>
+        let currentQuestionIndex = -1;
+        const chatBox = document.getElementById('chat-box');
+        const userInput = document.getElementById('user-input');
+        
+        // Replace with your Modal URLs
+        const BASE_URL = 'https://nikvis01--interview-app';
+        const START_URL = `${BASE_URL}-start.modal.run`;
+        const CHAT_URL = `${BASE_URL}-chat.modal.run`;
+
+        // Start chat when page loads
+        window.onload = async function() {
+            try {
+                const response = await fetch(START_URL);
+                const data = await response.json();
+                addMessage(data.question, 'bot');
+                currentQuestionIndex = data.question_index;
+            } catch (error) {
+                addMessage('Error starting chat: ' + error.message, 'bot');
+                console.error(error);
+            }
+        };
+
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            addMessage(message, 'user');
+            userInput.value = '';
+
+            try {
+                const response = await fetch(CHAT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        question_index: currentQuestionIndex,
+                        user_response: message
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.message === "Interview complete!") {
+                    addMessage("Thank you! Interview complete!", 'bot');
+                    addMessage("Your responses have been saved.", 'bot');
+                    userInput.disabled = true;
+                } else {
+                    addMessage(data.question, 'bot');
+                    currentQuestionIndex = data.question_index;
+                }
+            } catch (error) {
+                addMessage('Error sending message: ' + error.message, 'bot');
+                console.error(error);
+            }
+        }
+
+        function addMessage(message, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = sender === 'bot' ? 'bot-message' : 'user-message';
+            messageDiv.textContent = message;
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        userInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
